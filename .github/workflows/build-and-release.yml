@@ -81,8 +81,19 @@ jobs:
             build/dist/Open-Film-Lab-Setup-x64.exe
 
   build-linux:
-    name: Build & Package Debian/Ubuntu (.deb)
-    runs-on: ubuntu-latest
+    name: Build & Package Debian/Ubuntu (.deb) (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: amd64
+            experimental: false
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            experimental: true
+    continue-on-error: ${{ matrix.experimental }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -95,6 +106,7 @@ jobs:
             meson \
             ninja-build \
             pkg-config \
+            dpkg-dev \
             libgtk-4-dev \
             libraw-dev \
             libtiff-dev \
@@ -109,7 +121,7 @@ jobs:
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: open-film-lab-linux
+          name: open-film-lab-linux-${{ matrix.arch }}
           path: build/dist/*.deb
 
   release:
@@ -152,5 +164,5 @@ jobs:
             artifacts/open-film-lab-macos/Open-Film-Lab-macOS.zip
             artifacts/open-film-lab-windows/Open-Film-Lab-Windows-x64.zip
             artifacts/open-film-lab-windows/Open-Film-Lab-Setup-x64.exe
-            artifacts/open-film-lab-linux/*.deb
+            artifacts/open-film-lab-linux-*/*.deb
           generate_release_notes: true
