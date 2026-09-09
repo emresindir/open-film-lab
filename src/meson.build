@@ -4,7 +4,10 @@ tiffdep = dependency('libtiff-4', required: true)
 jpegdep = dependency('libjpeg', required: true)
 lcmsdep = dependency('lcms2', required: true)
 
-extra_deps = []
+cc = meson.get_compiler('c')
+m_dep = cc.find_library('m', required: false)
+
+extra_deps = [m_dep]
 if host_machine.system() == 'darwin'
   extra_deps += [
     dependency('appleframeworks', modules: ['AppKit', 'Foundation'])
