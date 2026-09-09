@@ -298,8 +298,10 @@ static gboolean map_widget_to_image(GtkWidget *w, int img_w, int img_h,
 
   int x = (int)(nx * img_w);
   int y = (int)(ny * img_h);
-  if (x < 0) x = 0; if (x >= img_w) x = img_w - 1;
-  if (y < 0) y = 0; if (y >= img_h) y = img_h - 1;
+  if (x < 0) x = 0;
+  if (x >= img_w) x = img_w - 1;
+  if (y < 0) y = 0;
+  if (y >= img_h) y = img_h - 1;
 
   *ix = x; *iy = y;
   return TRUE;

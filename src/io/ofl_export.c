@@ -120,17 +120,25 @@ char* ofl_export_format_filename(const char *pattern,
     base = g_strdup_printf("frame_%03d", item_index);
   }
 
-  // Get current local time
-  time_t t = time(NULL);
-  struct tm tm_info;
-  localtime_r(&t, &tm_info);
+  // Get current local time using portable GDateTime
+  GDateTime *now = g_date_time_new_now_local();
+  int year = 1970, mon = 1, day = 1, hour = 0, min = 0, sec = 0;
+  if (now) {
+    year = g_date_time_get_year(now);
+    mon  = g_date_time_get_month(now);
+    day  = g_date_time_get_day_of_month(now);
+    hour = g_date_time_get_hour(now);
+    min  = g_date_time_get_minute(now);
+    sec  = g_date_time_get_second(now);
+    g_date_time_unref(now);
+  }
 
   char s_date[32], s_time[32], s_year[16], s_month[16], s_day[16], s_idx[16];
-  snprintf(s_date, sizeof(s_date), "%04d-%02d-%02d", tm_info.tm_year + 1900, tm_info.tm_mon + 1, tm_info.tm_mday);
-  snprintf(s_time, sizeof(s_time), "%02d%02d%02d", tm_info.tm_hour, tm_info.tm_min, tm_info.tm_sec);
-  snprintf(s_year, sizeof(s_year), "%04d", tm_info.tm_year + 1900);
-  snprintf(s_month, sizeof(s_month), "%02d", tm_info.tm_mon + 1);
-  snprintf(s_day, sizeof(s_day), "%02d", tm_info.tm_mday);
+  snprintf(s_date, sizeof(s_date), "%04d-%02d-%02d", year, mon, day);
+  snprintf(s_time, sizeof(s_time), "%02d%02d%02d", hour, min, sec);
+  snprintf(s_year, sizeof(s_year), "%04d", year);
+  snprintf(s_month, sizeof(s_month), "%02d", mon);
+  snprintf(s_day, sizeof(s_day), "%02d", day);
   snprintf(s_idx, sizeof(s_idx), "%03d", item_index);
 
   const char *pat = (pattern && *pattern) ? pattern : "{name}";
