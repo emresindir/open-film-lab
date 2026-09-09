@@ -115,11 +115,28 @@ jobs:
   release:
     name: Publish Release Artifacts
     needs: [build-macos, build-windows, build-linux]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine release version and tag
+        id: release_info
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+            NAME="Open Film Lab ${TAG}"
+          else
+            VERSION=$(grep "version:" meson.build | head -n1 | sed -E "s/.*version:[ ]*'([^']+)'.*/\1/")
+            TAG="v${VERSION}"
+            NAME="Open Film Lab v${VERSION}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "name=${NAME}" >> $GITHUB_OUTPUT
+
       - name: Download all workflow artifacts
         uses: actions/download-artifact@v4
         with:
@@ -128,6 +145,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: ${{ steps.release_info.outputs.name }}
           files: |
             artifacts/open-film-lab-macos/Open-Film-Lab-macOS.dmg
             artifacts/open-film-lab-macos/Open-Film-Lab-macOS.zip
