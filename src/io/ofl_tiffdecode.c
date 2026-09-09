@@ -17,6 +17,18 @@ static void silent_tiff_warning(const char *module, const char *fmt, va_list ap)
   (void)ap;
 }
 
+static TIFF* open_tiff_portable(const char *path, const char *mode) {
+#ifdef _WIN32
+  wchar_t *wpath = (wchar_t *)g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+  if (!wpath) return NULL;
+  TIFF *tif = TIFFOpenW(wpath, mode);
+  g_free(wpath);
+  return tif;
+#else
+  return TIFFOpen(path, mode);
+#endif
+}
+
 OflRgb16* ofl_tiffdecode_rgb16(const char *path, GError **error) {
   if (!path) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "No path provided");
@@ -26,7 +38,7 @@ OflRgb16* ofl_tiffdecode_rgb16(const char *path, GError **error) {
   // Silence non-critical TIFF warnings (e.g. unknown private tags from scanners)
   TIFFSetWarningHandler(silent_tiff_warning);
 
-  TIFF *tif = TIFFOpen(path, "r");
+  TIFF *tif = open_tiff_portable(path, "r");
   if (!tif) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "Failed to open TIFF file: %s", path);
     return NULL;

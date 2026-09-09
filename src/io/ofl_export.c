@@ -232,7 +232,13 @@ static gboolean write_tiff_file(const char *dest_path,
                                 const unsigned char *icc_data,
                                 unsigned int icc_len,
                                 GError **error) {
+#ifdef _WIN32
+  wchar_t *wdest = (wchar_t *)g_utf8_to_utf16(dest_path, -1, NULL, NULL, NULL);
+  TIFF *out = wdest ? TIFFOpenW(wdest, "w") : NULL;
+  g_free(wdest);
+#else
   TIFF *out = TIFFOpen(dest_path, "w");
+#endif
   if (!out) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
                 "Failed to open TIFF file for writing: %s", dest_path);

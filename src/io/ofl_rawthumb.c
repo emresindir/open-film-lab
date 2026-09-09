@@ -8,7 +8,18 @@ GdkTexture* ofl_rawthumb_texture_from_file(const char *path, GError **error) {
     return NULL;
   }
 
+#ifdef _WIN32
+  wchar_t *wpath = (wchar_t *)g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+  if (!wpath) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "Failed to convert path to UTF-16: %s", path);
+    libraw_close(raw);
+    return NULL;
+  }
+  int rc = libraw_open_wfile(raw, wpath);
+  g_free(wpath);
+#else
   int rc = libraw_open_file(raw, path);
+#endif
   if (rc != LIBRAW_SUCCESS) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
                 "libraw_open_file failed: %s", libraw_strerror(rc));
