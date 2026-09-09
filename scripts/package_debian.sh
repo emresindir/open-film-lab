@@ -59,8 +59,21 @@ fi
 INSTALLED_SIZE=$(du -sk "$STAGING_DIR" | cut -f1)
 
 # 5. Determine dependencies
-# We use standard library packages with alternative names for Debian 12/13 and Ubuntu 22/24 compatibility
-DEPENDS="libc6, libglib2.0-0t64 | libglib2.0-0, libgtk-4-1, libraw23 | libraw24, libtiff6, libjpeg62-turbo | libjpeg8, liblcms2-2"
+# Fallback compatible list (Debian 12/13, Ubuntu 22.04/24.04, Mint)
+DEPENDS="libc6, libglib2.0-0t64 | libglib2.0-0, libgtk-4-1, libraw23t64 | libraw23 | libraw24, libtiff6, libjpeg62-turbo | libjpeg8, liblcms2-2"
+
+# If dpkg-shlibdeps is available, dynamically query the exact installed library versions from the ELF binary
+if command -v dpkg-shlibdeps >/dev/null 2>&1; then
+    echo "--> Calculating runtime dependencies with dpkg-shlibdeps..."
+    mkdir -p "$STAGING_DIR/debian"
+    touch "$STAGING_DIR/debian/control"
+    SHLIBDEPS=$(dpkg-shlibdeps -O "$STAGING_DIR/usr/bin/open-film-lab" 2>/dev/null | grep '^shlibs:Depends=' | sed 's/^shlibs:Depends=//' || true)
+    rm -rf "$STAGING_DIR/debian"
+    if [ -n "$SHLIBDEPS" ]; then
+        DEPENDS="$SHLIBDEPS"
+        echo "    Detected: $DEPENDS"
+    fi
+fi
 
 # 6. Create DEBIAN control directory and files
 echo "--> Creating DEBIAN package control files..."
