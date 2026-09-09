@@ -1,0 +1,83 @@
+# ============================
+# Meson / Ninja build outputs
+# ============================
+
+# Common build directories
+build/
+builddir/
+_build/
+out/
+
+# Meson internal files
+.meson-logs/
+.meson-private/
+meson-private/
+meson-logs/
+
+# Ninja files
+.ninja_log
+.ninja_deps
+
+# ============================
+# Compiled objects & binaries
+# ============================
+
+*.o
+*.lo
+*.la
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# ============================
+# Debug / profiling artifacts
+# ============================
+
+*.dSYM/
+*.gdb
+*.gdb_history
+*.lldb
+*.prof
+*.gcno
+*.gcda
+*.gcov
+
+# ============================
+# CMake leftovers (just in case)
+# ============================
+
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# ============================
+# Editor / IDE
+# ============================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+.DS_Store
+
+# ============================
+# OS / misc
+# ============================
+
+Thumbs.db
+ehthumbs.db
+*.log
+
+# ============================
+# Scratch & Local caches
+# ============================
+scratch/
+.cache/

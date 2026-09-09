@@ -1,0 +1,137 @@
+name: Build and Package Distributions
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    name: Build & Package macOS (Universal/arm64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies via Homebrew
+        run: |
+          brew update
+          brew install gtk4 libraw libtiff jpeg-turbo little-cms2 meson ninja
+
+      - name: Build and package macOS distribution
+        run: |
+          chmod +x scripts/package_macos.sh scripts/bundle_macos_dylibs.py
+          ./scripts/package_macos.sh
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-film-lab-macos
+          path: |
+            build/dist/Open-Film-Lab-macOS.dmg
+            build/dist/Open-Film-Lab-macOS.zip
+
+  build-windows:
+    name: Build & Package Windows (x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2 (UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-libraw
+            mingw-w64-ucrt-x86_64-libtiff
+            mingw-w64-ucrt-x86_64-libjpeg-turbo
+            mingw-w64-ucrt-x86_64-lcms2
+            mingw-w64-ucrt-x86_64-ntldd
+            zip
+
+      - name: Build and package Windows distribution
+        shell: msys2 {0}
+        run: |
+          chmod +x scripts/package_windows_msys2.sh
+          ./scripts/package_windows_msys2.sh
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows Installer (Inno Setup)
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\installer.iss
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-film-lab-windows
+          path: |
+            build/dist/Open-Film-Lab-Windows-x64.zip
+            build/dist/Open-Film-Lab-Setup-x64.exe
+
+  build-linux:
+    name: Build & Package Debian/Ubuntu (.deb)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies via apt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            meson \
+            ninja-build \
+            pkg-config \
+            libgtk-4-dev \
+            libraw-dev \
+            libtiff-dev \
+            libjpeg-dev \
+            liblcms2-dev
+
+      - name: Build and package Debian distribution
+        run: |
+          chmod +x scripts/package_debian.sh
+          ./scripts/package_debian.sh
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-film-lab-linux
+          path: build/dist/*.deb
+
+  release:
+    name: Publish Release Artifacts
+    needs: [build-macos, build-windows, build-linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/open-film-lab-macos/Open-Film-Lab-macOS.dmg
+            artifacts/open-film-lab-macos/Open-Film-Lab-macOS.zip
+            artifacts/open-film-lab-windows/Open-Film-Lab-Windows-x64.zip
+            artifacts/open-film-lab-windows/Open-Film-Lab-Setup-x64.exe
+            artifacts/open-film-lab-linux/*.deb
+          generate_release_notes: true

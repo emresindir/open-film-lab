@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>open-film-lab.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Open Film Lab</name>
+  <summary>Process and convert color &amp; B&amp;W film negatives and RAW camera files</summary>
+  <description>
+    <p>
+      Open Film Lab is a high-performance application for converting and editing analog film negatives
+      digitized via camera scanning or film scanners. It supports camera RAW formats, uncompressed TIFF scans,
+      and provides interactive non-destructive adjustments, inversion algorithms, crop tools, and export to JPEG and TIFF.
+    </p>
+    <ul>
+      <li>High quality RAW demosaicing via LibRaw</li>
+      <li>Precision color negative inversion with film base sampling</li>
+      <li>Black &amp; white conversion modes</li>
+      <li>Full adjustment pipeline: Exposure, Contrast, Shadows, Highlights, White Balance</li>
+      <li>Crop tool with resolution readout and interactive handles</li>
+      <li>Batch export to JPEG and 8/16-bit TIFF with color profiles (sRGB, Adobe RGB, Display P3, ProPhoto RGB)</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">open-film-lab.desktop</launchable>
+  <provides>
+    <binary>open-film-lab</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.0" date="2026-09-08">
+      <description>
+        <p>Initial release featuring RAW conversion, negative inversion, crop, and multi-format export.</p>
+      </description>
+    </release>
+  </releases>
+</component>

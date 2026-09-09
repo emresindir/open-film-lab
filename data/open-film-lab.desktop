@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Open Film Lab
+GenericName=RAW & Film Negative Processor
+Comment=Process and convert color & B&W film negatives and RAW camera files
+Exec=open-film-lab %F
+Icon=open-film-lab
+Terminal=false
+Type=Application
+Categories=Graphics;Photography;2DGraphics;RasterGraphics;
+MimeType=image/x-canon-cr2;image/x-fuji-raf;image/x-sony-arw;image/x-nikon-nef;image/tiff;
+StartupNotify=true
+Keywords=photo;raw;negative;film;color;darkroom;photography;
