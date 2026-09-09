@@ -30,7 +30,18 @@ static OflRgb16* rawdecode_internal(const char *path, gboolean is_preview, GErro
     return NULL;
   }
 
+#ifdef _WIN32
+  wchar_t *wpath = (wchar_t *)g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+  if (!wpath) {
+    set_err(error, "Failed to convert path to UTF-16: %s", path);
+    libraw_close(raw);
+    return NULL;
+  }
+  int rc = libraw_open_wfile(raw, wpath);
+  g_free(wpath);
+#else
   int rc = libraw_open_file(raw, path);
+#endif
   if (rc != LIBRAW_SUCCESS) {
     set_err(error, "libraw_open_file failed: %s", libraw_strerror(rc));
     libraw_close(raw);

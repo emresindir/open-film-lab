@@ -235,7 +235,8 @@ static void scan_folder(OflApp *s, GFile *folder) {
 
     if (g_file_info_get_file_type(info) == G_FILE_TYPE_REGULAR) {
       const char *name = g_file_info_get_name(info);
-      if (is_supported_image_ext(name)) {
+      // Skip hidden files, system files, and macOS AppleDouble files (._*)
+      if (name && name[0] != '.' && is_supported_image_ext(name)) {
         GFile *child = g_file_get_child(folder, name);
 
         OflFrame *fr = ofl_frame_new(child);

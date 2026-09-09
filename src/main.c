@@ -21,15 +21,19 @@ static void setup_portable_environment(void) {
     g_free(dir);
   }
 #elif defined(_WIN32)
-  char exe_path[MAX_PATH];
-  if (GetModuleFileNameA(NULL, exe_path, MAX_PATH) > 0) {
-    char *dir = g_path_get_dirname(exe_path);
-    char *schemas = g_build_filename(dir, "share", "glib-2.0", "schemas", NULL);
-    if (g_file_test(schemas, G_FILE_TEST_IS_DIR)) {
-      g_setenv("GSETTINGS_SCHEMA_DIR", schemas, TRUE);
+  wchar_t wexe_path[MAX_PATH];
+  if (GetModuleFileNameW(NULL, wexe_path, MAX_PATH) > 0) {
+    char *exe_path = g_utf16_to_utf8((const guint16 *)wexe_path, -1, NULL, NULL, NULL);
+    if (exe_path) {
+      char *dir = g_path_get_dirname(exe_path);
+      char *schemas = g_build_filename(dir, "share", "glib-2.0", "schemas", NULL);
+      if (g_file_test(schemas, G_FILE_TEST_IS_DIR)) {
+        g_setenv("GSETTINGS_SCHEMA_DIR", schemas, TRUE);
+      }
+      g_free(schemas);
+      g_free(dir);
+      g_free(exe_path);
     }
-    g_free(schemas);
-    g_free(dir);
   }
 #endif
 }
