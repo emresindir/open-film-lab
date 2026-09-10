@@ -96,7 +96,7 @@ Description: RAW and film negative processor
  color and B&W conversion, crop tools, and multi-format export.
 EOF
 
-# Post-installation script (refresh desktop and icon caches, ensure libjpeg compatibility)
+# Post-installation script (refresh desktop and icon caches)
 cat <<'EOF' > "$STAGING_DIR/DEBIAN/postinst"
 #!/bin/sh
 set -e
@@ -107,21 +107,12 @@ if [ "$1" = "configure" ]; then
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
         gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
     fi
-
-    # Compatibility symlink for Debian/Ubuntu libjpeg version differences:
-    # Ubuntu provides libjpeg.so.8 while Debian provides libjpeg.so.62
-    MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"
-    if [ -n "$MULTIARCH" ] && [ -d "/usr/lib/$MULTIARCH" ]; then
-        if [ -f "/usr/lib/$MULTIARCH/libjpeg.so.62" ] && [ ! -e "/usr/lib/$MULTIARCH/libjpeg.so.8" ]; then
-            ln -sf libjpeg.so.62 "/usr/lib/$MULTIARCH/libjpeg.so.8" || true
-        fi
-    fi
 fi
 exit 0
 EOF
 chmod 755 "$STAGING_DIR/DEBIAN/postinst"
 
-# Post-removal script (refresh desktop and icon caches, cleanup compatibility symlink)
+# Post-removal script (refresh desktop and icon caches)
 cat <<'EOF' > "$STAGING_DIR/DEBIAN/postrm"
 #!/bin/sh
 set -e
@@ -131,14 +122,6 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
     fi
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
         gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
-    fi
-
-    MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"
-    if [ -n "$MULTIARCH" ] && [ -L "/usr/lib/$MULTIARCH/libjpeg.so.8" ]; then
-        TARGET="$(readlink "/usr/lib/$MULTIARCH/libjpeg.so.8" 2>/dev/null || true)"
-        if [ "$TARGET" = "libjpeg.so.62" ]; then
-            rm -f "/usr/lib/$MULTIARCH/libjpeg.so.8" || true
-        fi
     fi
 fi
 exit 0

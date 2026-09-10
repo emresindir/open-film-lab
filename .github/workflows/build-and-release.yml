@@ -83,6 +83,8 @@ jobs:
   build-linux:
     name: Build & Package Debian/Ubuntu (.deb) (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+    container:
+      image: debian:trixie
     strategy:
       fail-fast: false
       matrix:
@@ -100,13 +102,14 @@ jobs:
 
       - name: Install dependencies via apt
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
             build-essential \
             meson \
             ninja-build \
             pkg-config \
             dpkg-dev \
+            git \
             libgtk-4-dev \
             libraw-dev \
             libtiff-dev \
