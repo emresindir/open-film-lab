@@ -577,22 +577,53 @@ static GdkTexture* ofl_load_initial_thumbnail(const char *path, GError **error) 
   if (ofl_is_tiff_path(path)) {
     GError *err = NULL;
     GdkPixbuf *pb = gdk_pixbuf_new_from_file_at_scale(path, 160, 160, TRUE, &err);
-    if (!pb) {
-      if (error && err) *error = err;
-      else if (err) g_clear_error(&err);
-      return NULL;
+    if (pb) {
+      int w = gdk_pixbuf_get_width(pb);
+      int h = gdk_pixbuf_get_height(pb);
+      int rowstride = gdk_pixbuf_get_rowstride(pb);
+      gboolean has_alpha = gdk_pixbuf_get_has_alpha(pb);
+      GBytes *bytes = g_bytes_new(gdk_pixbuf_read_pixels(pb), (size_t)rowstride * (size_t)h);
+      GdkTexture *tex = gdk_memory_texture_new(w, h,
+                                               has_alpha ? GDK_MEMORY_R8G8B8A8 : GDK_MEMORY_R8G8B8,
+                                               bytes,
+                                               (gsize)rowstride);
+      g_bytes_unref(bytes);
+      g_object_unref(pb);
+      return tex;
     }
-    int w = gdk_pixbuf_get_width(pb);
-    int h = gdk_pixbuf_get_height(pb);
-    int rowstride = gdk_pixbuf_get_rowstride(pb);
-    gboolean has_alpha = gdk_pixbuf_get_has_alpha(pb);
-    GBytes *bytes = g_bytes_new(gdk_pixbuf_read_pixels(pb), (size_t)rowstride * (size_t)h);
-    GdkTexture *tex = gdk_memory_texture_new(w, h,
-                                             has_alpha ? GDK_MEMORY_R8G8B8A8 : GDK_MEMORY_R8G8B8,
-                                             bytes,
-                                             (gsize)rowstride);
+    if (err) g_clear_error(&err);
+
+    /* Fallback: decode directly via LibTIFF if gdk-pixbuf loader is missing */
+    OflRgb16 *img = ofl_tiffdecode_rgb16(path, error);
+    if (!img) return NULL;
+
+    int tw = img->width;
+    int th = img->height;
+    if (tw > 160 || th > 160) {
+      float s = 160.0f / (float)(tw > th ? tw : th);
+      tw = (int)(tw * s);
+      th = (int)(th * s);
+      if (tw < 1) tw = 1;
+      if (th < 1) th = 1;
+    }
+    int stride = tw * 4;
+    guint8 *buf = g_malloc((size_t)stride * th);
+    for (int y = 0; y < th; y++) {
+      int sy = (int)((int64_t)y * img->height / th);
+      const uint16_t *srow = img->rgb + (size_t)sy * img->width * 3;
+      guint8 *drow = buf + (size_t)y * stride;
+      for (int x = 0; x < tw; x++) {
+        int sx = (int)((int64_t)x * img->width / tw);
+        drow[x * 4 + 0] = (guint8)(srow[sx * 3 + 0] >> 8);
+        drow[x * 4 + 1] = (guint8)(srow[sx * 3 + 1] >> 8);
+        drow[x * 4 + 2] = (guint8)(srow[sx * 3 + 2] >> 8);
+        drow[x * 4 + 3] = 255;
+      }
+    }
+    ofl_rgb16_free(img);
+    GBytes *bytes = g_bytes_new_take(buf, (size_t)stride * th);
+    GdkTexture *tex = gdk_memory_texture_new(tw, th, GDK_MEMORY_R8G8B8A8, bytes, (gsize)stride);
     g_bytes_unref(bytes);
-    g_object_unref(pb);
     return tex;
   }
 
