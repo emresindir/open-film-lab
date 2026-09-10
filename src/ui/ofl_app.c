@@ -1486,12 +1486,9 @@ static void on_pick_base_clicked(GtkButton *button, gpointer user_data) {
   gtk_button_set_label(s->btn_pick, "Cancel Pick");
   gtk_widget_add_css_class(GTK_WIDGET(s->btn_pick), "suggested-action");
 
-  GdkCursor *fallback = gdk_cursor_new_from_name("crosshair", NULL);
-  GdkCursor *cur = gdk_cursor_new_from_name("eyedropper", fallback);
-  if (!cur) cur = gdk_cursor_new_from_name("color-picker", fallback);
-  gtk_widget_set_cursor(GTK_WIDGET(s->preview), cur ? cur : fallback);
+  GdkCursor *cur = gdk_cursor_new_from_name("crosshair", NULL);
+  gtk_widget_set_cursor(GTK_WIDGET(s->preview), cur);
   if (cur) g_object_unref(cur);
-  if (fallback) g_object_unref(fallback);
 
   gtk_widget_set_visible(s->hud_box, TRUE);
   char msg[128];
@@ -2444,21 +2441,40 @@ static void unbind_list_item(GtkListItemFactory *factory, GtkListItem *item, gpo
 }
 
 // ---------- Crop Tool & Overlay ----------
+static void draw_crop_icon_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
+  (void)user_data;
+  GdkRGBA color;
+  gtk_widget_get_color(GTK_WIDGET(area), &color);
+  gdk_cairo_set_source_rgba(cr, &color);
+
+  cairo_set_line_width(cr, 1.8);
+  cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+  cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+
+  double scale = (double)(width < height ? width : height) / 16.0;
+  if (scale <= 0.0) scale = 1.0;
+  cairo_scale(cr, scale, scale);
+
+  // Top-left to bottom-right corner bracket
+  cairo_move_to(cr, 5.0, 1.5);
+  cairo_line_to(cr, 5.0, 11.0);
+  cairo_line_to(cr, 14.5, 11.0);
+
+  // Bottom-right to top-left overlapping corner bracket
+  cairo_move_to(cr, 1.5, 5.0);
+  cairo_line_to(cr, 11.0, 5.0);
+  cairo_line_to(cr, 11.0, 14.5);
+
+  cairo_stroke(cr);
+}
+
 static GtkWidget* create_crop_icon_widget(void) {
-  static const char crop_svg[] =
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
-    "  <path fill=\"none\" stroke=\"#e6e6ec\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" "
-    "        d=\"M5 1v10h10 M1 5h10v10\" />"
-    "</svg>";
-  GBytes *b = g_bytes_new_static(crop_svg, sizeof(crop_svg) - 1);
-  GdkTexture *tex = gdk_texture_new_from_bytes(b, NULL);
-  g_bytes_unref(b);
-  if (tex) {
-    GtkWidget *img = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
-    g_object_unref(tex);
-    return img;
-  }
-  return gtk_label_new("⚲");
+  GtkWidget *da = gtk_drawing_area_new();
+  gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(da), 16);
+  gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(da), 16);
+  gtk_widget_set_can_target(da, FALSE);
+  gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(da), draw_crop_icon_func, NULL, NULL);
+  return da;
 }
 
 static gboolean get_displayed_image_rect(OflApp *s, double *out_x, double *out_y, double *out_w, double *out_h) {
