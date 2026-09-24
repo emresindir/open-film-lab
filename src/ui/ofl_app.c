@@ -72,6 +72,14 @@ typedef struct {
 
   gboolean   is_updating_adj_ui;
 
+  // Histogram UI and state
+  GtkWidget *hist_da;
+  uint32_t   hist_r[256];
+  uint32_t   hist_g[256];
+  uint32_t   hist_b[256];
+  uint32_t   hist_max;
+  gboolean   has_hist;
+
   // Crop mode state & UI
   GtkButton     *btn_crop;
   gboolean       crop_mode;
@@ -96,6 +104,8 @@ typedef enum {
 } CropHitTarget;
 
 static void render_selected_preview(OflApp *s);
+static void draw_histogram_cb(GtkDrawingArea *da, cairo_t *cr, int width, int height, gpointer user_data);
+static void update_histogram_from_rgba(OflApp *s, const guint8 *rgba, int w, int h, int stride);
 static void on_crop_tool_clicked(GtkButton *button, gpointer user_data);
 static void on_reset_crop_clicked(GtkButton *button, gpointer user_data);
 static void update_crop_cursor(OflApp *s, int hit);
@@ -857,6 +867,14 @@ static void reset_adjustments_ui(OflApp *s) {
   ofl_adjustments_init_defaults(&def);
   update_adj_readout_labels(s, &def);
   s->is_updating_adj_ui = FALSE;
+
+  s->has_hist = FALSE;
+  memset(s->hist_r, 0, sizeof(s->hist_r));
+  memset(s->hist_g, 0, sizeof(s->hist_g));
+  memset(s->hist_b, 0, sizeof(s->hist_b));
+  s->hist_max = 0;
+  if (s->hist_da) gtk_widget_queue_draw(s->hist_da);
+
   gtk_widget_set_sensitive(s->adj_panel, FALSE);
 }
 
@@ -1273,24 +1291,212 @@ static GtkWidget* create_slider_row(OflApp *s,
   return row;
 }
 
+static void update_histogram_from_rgba(OflApp *s, const guint8 *rgba, int w, int h, int stride) {
+  if (!s) return;
+  memset(s->hist_r, 0, sizeof(s->hist_r));
+  memset(s->hist_g, 0, sizeof(s->hist_g));
+  memset(s->hist_b, 0, sizeof(s->hist_b));
+  s->hist_max = 0;
+
+  if (!rgba || w <= 0 || h <= 0 || stride <= 0) {
+    s->has_hist = FALSE;
+    if (s->hist_da) gtk_widget_queue_draw(s->hist_da);
+    return;
+  }
+
+  // Fast subsample step for responsive real-time slider dragging
+  int step_x = (w > 1000) ? 2 : 1;
+  int step_y = (h > 1000) ? 2 : 1;
+
+  for (int y = 0; y < h; y += step_y) {
+    const guint8 *row = rgba + (size_t)y * (size_t)stride;
+    for (int x = 0; x < w; x += step_x) {
+      const guint8 *p = row + x * 4;
+      s->hist_r[p[0]]++;
+      s->hist_g[p[1]]++;
+      s->hist_b[p[2]]++;
+    }
+  }
+
+  // Determine peak while preventing pure border clips (bin 0 or 255) from squishing midtones
+  uint32_t inner_max = 0;
+  for (int i = 1; i < 255; i++) {
+    if (s->hist_r[i] > inner_max) inner_max = s->hist_r[i];
+    if (s->hist_g[i] > inner_max) inner_max = s->hist_g[i];
+    if (s->hist_b[i] > inner_max) inner_max = s->hist_b[i];
+  }
+  uint32_t border_max = 0;
+  for (int i = 0; i < 256; i += 255) {
+    if (s->hist_r[i] > border_max) border_max = s->hist_r[i];
+    if (s->hist_g[i] > border_max) border_max = s->hist_g[i];
+    if (s->hist_b[i] > border_max) border_max = s->hist_b[i];
+  }
+
+  uint32_t max_val = inner_max;
+  if (inner_max == 0) {
+    max_val = border_max;
+  } else if (border_max > inner_max) {
+    uint32_t capped = (uint32_t)(inner_max * 1.5);
+    max_val = (border_max < capped) ? border_max : capped;
+  }
+
+  s->hist_max = max_val;
+  s->has_hist = (max_val > 0);
+
+  if (s->hist_da) {
+    gtk_widget_queue_draw(s->hist_da);
+  }
+}
+
+static void draw_histogram_cb(GtkDrawingArea *da, cairo_t *cr, int width, int height, gpointer user_data) {
+  (void)da;
+  OflApp *s = (OflApp *)user_data;
+  if (!s || width <= 10 || height <= 10) return;
+
+  const double r = 6.0;
+  const double pad_x = 6.0;
+  const double pad_y_top = 7.0;
+  const double pad_y_bot = 5.0;
+  const double plot_w = (double)width - 2.0 * pad_x;
+  const double plot_h = (double)height - pad_y_top - pad_y_bot;
+  const double base_y = (double)height - pad_y_bot;
+
+  cairo_save(cr);
+
+  // Background and inner clip boundary
+  cairo_new_sub_path(cr);
+  cairo_arc(cr, (double)width - r - 0.5, r + 0.5, r, -M_PI / 2.0, 0.0);
+  cairo_arc(cr, (double)width - r - 0.5, (double)height - r - 0.5, r, 0.0, M_PI / 2.0);
+  cairo_arc(cr, r + 0.5, (double)height - r - 0.5, r, M_PI / 2.0, M_PI);
+  cairo_arc(cr, r + 0.5, r + 0.5, r, M_PI, 3.0 * M_PI / 2.0);
+  cairo_close_path(cr);
+
+  cairo_set_source_rgb(cr, 0.075, 0.075, 0.09);
+  cairo_fill_preserve(cr);
+  cairo_clip(cr);
+
+  // Grid lines at 25%, 50%, 75%
+  cairo_set_line_width(cr, 1.0);
+  static const double dashes[] = {2.0, 3.0};
+  cairo_set_dash(cr, dashes, 2, 0.0);
+  cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.08);
+
+  for (int i = 1; i <= 3; i++) {
+    double gx = round(pad_x + (double)i * plot_w / 4.0) + 0.5;
+    cairo_move_to(cr, gx, pad_y_top);
+    cairo_line_to(cr, gx, base_y);
+    cairo_stroke(cr);
+  }
+  cairo_set_dash(cr, NULL, 0, 0.0);
+
+  // Baseline
+  cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.12);
+  cairo_move_to(cr, pad_x, base_y + 0.5);
+  cairo_line_to(cr, pad_x + plot_w, base_y + 0.5);
+  cairo_stroke(cr);
+
+  if (!s->has_hist || s->hist_max == 0) {
+    // Clean empty state label
+    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_set_font_size(cr, 11.0);
+    cairo_text_extents_t ext;
+    const char *empty_msg = "No Image";
+    cairo_text_extents(cr, empty_msg, &ext);
+    double tx = ((double)width - ext.width) / 2.0 - ext.x_bearing;
+    double ty = ((double)height - ext.height) / 2.0 - ext.y_bearing;
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.22);
+    cairo_move_to(cr, tx, ty);
+    cairo_show_text(cr, empty_msg);
+
+    cairo_restore(cr);
+
+    // Stroke border
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, (double)width - r - 0.5, r + 0.5, r, -M_PI / 2.0, 0.0);
+    cairo_arc(cr, (double)width - r - 0.5, (double)height - r - 0.5, r, 0.0, M_PI / 2.0);
+    cairo_arc(cr, r + 0.5, (double)height - r - 0.5, r, M_PI / 2.0, M_PI);
+    cairo_arc(cr, r + 0.5, r + 0.5, r, M_PI, 3.0 * M_PI / 2.0);
+    cairo_close_path(cr);
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.14);
+    cairo_set_line_width(cr, 1.0);
+    cairo_stroke(cr);
+    return;
+  }
+
+  // Draw Red, Green, Blue channels with smooth square-root curve scaling
+  double norm_max = sqrt((double)s->hist_max);
+  if (norm_max <= 0.0) norm_max = 1.0;
+
+  struct {
+    const uint32_t *data;
+    double fr, fg, fb, fa;
+    double sr, sg, sb, sa;
+  } channels[3] = {
+    { s->hist_r, 0.92, 0.20, 0.20, 0.30, 0.98, 0.32, 0.32, 0.85 },
+    { s->hist_g, 0.18, 0.85, 0.32, 0.28, 0.25, 0.95, 0.45, 0.85 },
+    { s->hist_b, 0.20, 0.55, 0.98, 0.30, 0.35, 0.70, 1.00, 0.85 }
+  };
+
+  for (int c = 0; c < 3; c++) {
+    // Fill translucent area
+    cairo_set_source_rgba(cr, channels[c].fr, channels[c].fg, channels[c].fb, channels[c].fa);
+    cairo_move_to(cr, pad_x, base_y);
+    for (int i = 0; i < 256; i++) {
+      double x = pad_x + ((double)i / 255.0) * plot_w;
+      double val = sqrt((double)channels[c].data[i]) / norm_max;
+      if (val > 1.0) val = 1.0;
+      double y = base_y - val * plot_h;
+      cairo_line_to(cr, x, y);
+    }
+    cairo_line_to(cr, pad_x + plot_w, base_y);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Stroke outline
+    cairo_set_source_rgba(cr, channels[c].sr, channels[c].sg, channels[c].sb, channels[c].sa);
+    cairo_set_line_width(cr, 1.2);
+    for (int i = 0; i < 256; i++) {
+      double x = pad_x + ((double)i / 255.0) * plot_w;
+      double val = sqrt((double)channels[c].data[i]) / norm_max;
+      if (val > 1.0) val = 1.0;
+      double y = base_y - val * plot_h;
+      if (i == 0) cairo_move_to(cr, x, y);
+      else cairo_line_to(cr, x, y);
+    }
+    cairo_stroke(cr);
+  }
+
+  cairo_restore(cr);
+
+  // Stroke crisp outer border on top
+  cairo_new_sub_path(cr);
+  cairo_arc(cr, (double)width - r - 0.5, r + 0.5, r, -M_PI / 2.0, 0.0);
+  cairo_arc(cr, (double)width - r - 0.5, (double)height - r - 0.5, r, 0.0, M_PI / 2.0);
+  cairo_arc(cr, r + 0.5, (double)height - r - 0.5, r, M_PI / 2.0, M_PI);
+  cairo_arc(cr, r + 0.5, r + 0.5, r, M_PI, 3.0 * M_PI / 2.0);
+  cairo_close_path(cr);
+  cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.14);
+  cairo_set_line_width(cr, 1.0);
+  cairo_stroke(cr);
+}
+
 static GtkWidget* create_adjustments_panel(OflApp *s) {
-  GtkWidget *scroller = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
-                                 GTK_POLICY_NEVER,
-                                 GTK_POLICY_AUTOMATIC);
-  gtk_widget_set_size_request(scroller, 280, -1);
-  gtk_widget_set_hexpand(scroller, FALSE);
-  gtk_widget_add_css_class(scroller, "adjustment-sidebar");
+  // Outer fixed-width sidebar container
+  GtkWidget *sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_set_size_request(sidebar, 290, -1);
+  gtk_widget_set_hexpand(sidebar, FALSE);
+  gtk_widget_set_vexpand(sidebar, TRUE);
+  gtk_widget_add_css_class(sidebar, "adjustment-sidebar");
 
-  GtkWidget *panel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
-  gtk_widget_set_hexpand(panel, FALSE);
-  gtk_widget_add_css_class(panel, "adjustment-panel");
-  gtk_widget_set_margin_start(panel, 14);
-  gtk_widget_set_margin_end(panel, 14);
-  gtk_widget_set_margin_top(panel, 14);
-  gtk_widget_set_margin_bottom(panel, 14);
+  // Pinned top section (Fixed: Header + Real-time Histogram)
+  GtkWidget *fixed_top = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_hexpand(fixed_top, FALSE);
+  gtk_widget_set_margin_start(fixed_top, 14);
+  gtk_widget_set_margin_end(fixed_top, 14);
+  gtk_widget_set_margin_top(fixed_top, 12);
+  gtk_widget_set_margin_bottom(fixed_top, 8);
 
-  // Header row
+  // Header row: "Adjustments" title + "Reset All" button
   GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   GtkWidget *lbl_title = gtk_label_new("Adjustments");
   gtk_widget_add_css_class(lbl_title, "adj-title");
@@ -1303,7 +1509,66 @@ static GtkWidget* create_adjustments_panel(OflApp *s) {
 
   gtk_box_append(GTK_BOX(hdr), lbl_title);
   gtk_box_append(GTK_BOX(hdr), btn_reset_all);
-  gtk_box_append(GTK_BOX(panel), hdr);
+  gtk_box_append(GTK_BOX(fixed_top), hdr);
+
+  // Histogram container with header and live drawing area
+  GtkWidget *hist_container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_add_css_class(hist_container, "hist-container");
+
+  GtkWidget *hist_hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  GtkWidget *lbl_hist = gtk_label_new("HISTOGRAM");
+  gtk_widget_add_css_class(lbl_hist, "adj-section-header");
+  gtk_widget_set_halign(lbl_hist, GTK_ALIGN_START);
+  gtk_widget_set_hexpand(lbl_hist, TRUE);
+  gtk_box_append(GTK_BOX(hist_hdr), lbl_hist);
+
+  GtkWidget *badge_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  GtkWidget *b_r = gtk_label_new("R");
+  gtk_widget_add_css_class(b_r, "hist-badge-r");
+  GtkWidget *b_g = gtk_label_new("G");
+  gtk_widget_add_css_class(b_g, "hist-badge-g");
+  GtkWidget *b_b = gtk_label_new("B");
+  gtk_widget_add_css_class(b_b, "hist-badge-b");
+  gtk_box_append(GTK_BOX(badge_box), b_r);
+  gtk_box_append(GTK_BOX(badge_box), b_g);
+  gtk_box_append(GTK_BOX(badge_box), b_b);
+  gtk_box_append(GTK_BOX(hist_hdr), badge_box);
+
+  gtk_box_append(GTK_BOX(hist_container), hist_hdr);
+
+  s->hist_da = gtk_drawing_area_new();
+  gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(s->hist_da), 262);
+  gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(s->hist_da), 96);
+  gtk_widget_set_hexpand(s->hist_da, TRUE);
+  gtk_widget_set_can_target(s->hist_da, FALSE);
+  gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(s->hist_da), draw_histogram_cb, s, NULL);
+  gtk_box_append(GTK_BOX(hist_container), s->hist_da);
+
+  gtk_box_append(GTK_BOX(fixed_top), hist_container);
+
+  GtkWidget *sep_top = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_widget_set_margin_top(sep_top, 4);
+  gtk_widget_set_margin_bottom(sep_top, 0);
+  gtk_box_append(GTK_BOX(fixed_top), sep_top);
+
+  gtk_box_append(GTK_BOX(sidebar), fixed_top);
+
+  // Scrollable controls area
+  GtkWidget *scroller = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
+                                 GTK_POLICY_NEVER,
+                                 GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_vexpand(scroller, TRUE);
+  gtk_widget_set_hexpand(scroller, FALSE);
+  gtk_widget_add_css_class(scroller, "adjustment-scroller");
+
+  GtkWidget *panel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+  gtk_widget_set_hexpand(panel, FALSE);
+  gtk_widget_add_css_class(panel, "adjustment-panel");
+  gtk_widget_set_margin_start(panel, 14);
+  gtk_widget_set_margin_end(panel, 14);
+  gtk_widget_set_margin_top(panel, 10);
+  gtk_widget_set_margin_bottom(panel, 14);
 
   // Section: WHITE BALANCE
   GtkWidget *sec_wb = gtk_label_new("WHITE BALANCE & TINT");
@@ -1365,10 +1630,12 @@ static GtkWidget* create_adjustments_panel(OflApp *s) {
   gtk_box_append(GTK_BOX(panel), crop_hbox);
 
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), panel);
-  s->adj_panel = scroller;
+  gtk_box_append(GTK_BOX(sidebar), scroller);
+
+  s->adj_panel = sidebar;
   gtk_widget_set_sensitive(s->adj_panel, FALSE);
 
-  return scroller;
+  return sidebar;
 }
 
 static void on_selection_model_selection_changed(GtkSelectionModel *model, guint position, guint n_items, gpointer user_data) {
@@ -3141,6 +3408,8 @@ static void render_selected_preview(OflApp *s) {
     }
     if (cur_fr) g_object_unref(cur_fr);
 
+    update_histogram_from_rgba(s, rgba, out_w, out_h, stride);
+
     GBytes *bytes = g_bytes_new_take(rgba, (gsize)stride * (gsize)out_h);
     GdkTexture *tex = gdk_memory_texture_new(out_w, out_h,
                                              GDK_MEMORY_R8G8B8A8,
@@ -3199,6 +3468,8 @@ static void render_selected_preview(OflApp *s) {
     }
     g_object_unref(cur_fr);
   }
+
+  update_histogram_from_rgba(s, rgba, out_w, out_h, stride);
 
   GBytes *bytes = g_bytes_new_take(rgba, (gsize)stride * (gsize)out_h);
   GdkTexture *tex = gdk_memory_texture_new(out_w, out_h,
@@ -3445,6 +3716,58 @@ static void activate(GtkApplication *app, gpointer user_data) {
     ".token-chip:hover {"
     "  background-color: #2e354a;"
     "  color: #85b7ff;"
+    "}"
+    ".hist-container {"
+    "  background-color: transparent;"
+    "}"
+    ".hist-badge-r {"
+    "  font-family: monospace, ui-monospace, Menlo, Consolas;"
+    "  font-size: 10px;"
+    "  font-weight: 700;"
+    "  color: #ff5252;"
+    "  background-color: rgba(255, 82, 82, 0.15);"
+    "  border: 1px solid rgba(255, 82, 82, 0.35);"
+    "  border-radius: 3px;"
+    "  padding: 0 4px;"
+    "}"
+    ".hist-badge-g {"
+    "  font-family: monospace, ui-monospace, Menlo, Consolas;"
+    "  font-size: 10px;"
+    "  font-weight: 700;"
+    "  color: #4cd964;"
+    "  background-color: rgba(76, 217, 100, 0.15);"
+    "  border: 1px solid rgba(76, 217, 100, 0.35);"
+    "  border-radius: 3px;"
+    "  padding: 0 4px;"
+    "}"
+    ".hist-badge-b {"
+    "  font-family: monospace, ui-monospace, Menlo, Consolas;"
+    "  font-size: 10px;"
+    "  font-weight: 700;"
+    "  color: #5ac8fa;"
+    "  background-color: rgba(90, 200, 250, 0.15);"
+    "  border: 1px solid rgba(90, 200, 250, 0.35);"
+    "  border-radius: 3px;"
+    "  padding: 0 4px;"
+    "}"
+    ".adjustment-scroller {"
+    "  background-color: transparent;"
+    "}"
+    ".adjustment-scroller scrollbar {"
+    "  background-color: transparent;"
+    "  transition: all 200ms ease;"
+    "}"
+    ".adjustment-scroller scrollbar trough {"
+    "  background-color: transparent;"
+    "}"
+    ".adjustment-scroller scrollbar slider {"
+    "  min-width: 6px;"
+    "  min-height: 24px;"
+    "  border-radius: 3px;"
+    "  background-color: rgba(255, 255, 255, 0.18);"
+    "}"
+    ".adjustment-scroller scrollbar slider:hover {"
+    "  background-color: rgba(255, 255, 255, 0.35);"
     "}");
   gtk_style_context_add_provider_for_display(
     gdk_display_get_default(),
